@@ -187,3 +187,27 @@ RMSE.m1.test.imputation <- sqrt(mean(testset.imputation.error^2))
 summary(abs(testset.imputation.error))
 
 vif(m1)
+###############################################################################################
+# Develop model on trainset, including time data, but dropping NA values
+nrow(trainset)
+sum(is.na(trainset))
+trainset <- trainset[complete.cases(trainset), ]
+testset <- testset[complete.cases(testset), ]
+nrow(trainset)
+sum(is.na(trainset))
+m2 <- lm(windmill_generated_power ~ . - year, data = trainset)
+summary(m2)
+
+# Residuals = Error = Actual mpg - Model Predicted mpg
+RMSE.m2.train <- sqrt(mean(residuals(m2)^2))  # RMSE on trainset based on m5 model.
+summary(abs(residuals(m2)))  # Check Min Abs Error and Max Abs Error.
+
+# Apply model from trainset to predict on testset.
+predict.m2.test <- predict(m2, newdata = testset)
+testset.error <- testset$windmill_generated_power - predict.m2.test
+
+# Testset Errors
+RMSE.m2.test <- sqrt(mean(testset.error^2))
+summary(abs(testset.imputation.error))
+
+vif(m2)
