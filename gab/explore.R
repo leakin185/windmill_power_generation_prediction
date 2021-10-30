@@ -12,6 +12,9 @@
 
 library(data.table)
 library(ggplot2)
+# install.packages('Rcpp')
+library(Rcpp)
+library(car)
 
 # Set a working directory to store all the related datasets and files.
 # setwd("D:/Dropbox/Schools/NBS/REP RE6013/3 Data Exploration and Statistics")
@@ -70,163 +73,141 @@ wind.dt$min <- unlist(lapply(wind.dt$datetime, get_min))
 wind.dt$sec <- unlist(lapply(wind.dt$datetime, get_sec))
 
 # convert necessary features to factor 
-# lawsuit.dt$Dept <- factor(lawsuit.dt$Dept)
+wind.dt$year = as.factor(wind.dt$year)
+wind.dt$month = as.factor(wind.dt$month)
+wind.dt$mday = as.factor(wind.dt$mday)
+wind.dt$wday = as.factor(wind.dt$wday)
+
+# drop column tracking_id and datatime
+wind.dt[,tracking_id:=NULL]
+wind.dt[,datetime:=NULL]
+wind.dt[,sec:=NULL]
+wind.dt[,min:=NULL]
+colnames(wind.dt)
+ncol(wind.dt)
+
+summary(wind.dt)
+
+
+#sample split into train and test set
+library(caTools)
+set.seed(2021)
+train <- sample.split(Y=wind.dt$windmill_generated_power, SplitRatio=0.7)
+trainset<- subset(wind.dt, train==T)
+testset<- subset(wind.dt, train==F)
+paste("number of rows of trainset: ",nrow(trainset))
+paste("proportion of trainset: ", nrow(trainset)/nrow(wind.dt))
+paste("number of rows of testset: ",nrow(testset))
+paste("proportion of testset: ", nrow(testset)/nrow(wind.dt))
 
 ###################
 # NA Analysis and Handling
 ###################
 # install.packages("naniar")
 library(naniar)
+# install.packages("VIM")
+library(VIM)
+# Data imputation with MICE stochastic regression imputation
+library(mice)
 
-gg_miss_upset(wind.dt) # interesting overview of NA
+trainset[trainset == ""] <- NA # account for "" as NA
+testset[testset == ""] <- NA
 
-# TODO further analysis of NA
-# https://cran.r-project.org/web/packages/naniar/vignettes/naniar-visualisation.html
-
-###################
-# Preparation of Data for Analysis
-###################
-# drop column tracking_id and datatime
-wind.dt[,tracking_id:=NULL]
-wind.dt[,datetime:=NULL]
-
-# simplistic way to handle NA, TODO refine if have time
-na_handler <- function(x) {
-  if (is.numeric(x)) {
-    ### Numerical Imputation using Mean Values
-    x[is.na(x)] <- mean(x, na.rm = TRUE)
-    x
-  } else {
-    ### Categorical Imputation using Mode
-    x[is.na(x)] <- names(which.max(table(x)))
-    x
-  }
+data_imputation = function(data)
+{
+  # Imputing Numeric missing data using MICE stochastic regression imputation
+  imp = mice(data[,c(1:14,17,19:20)], method = "norm.nob", m = 5, maxit = 5)
+  data1 = complete(imp,2)
+  
+  # Filling missing values in categorical variables using KNN imputer
+  imp2 = kNN(data[,c(15,16)])
+  data2 = imp2[,c(1,2)]
+  
+  # Concatenating all the imputed features
+  data1 = cbind(data[,c(18,21:25)],data1, data2)
+  
+  return(data1)
 }
 
-sum(is.na(wind.dt)) # 20579
-wind.dt <- wind.dt[, lapply(.SD, na_handler)]
-sum(is.na(wind.dt)) # 0
+trainset.imputation <- data_imputation(trainset)
+testset.imputation <- data_imputation(testset)
 
-# Cleaned wind.dt
-wind.dt
+sum(is.na(trainset)) 
+sum(is.na(trainset.imputation))
+sum(is.na(testset))
+sum(is.na(testset.imputation))
+
+trainset.imputation$cloud_level = as.factor(trainset.imputation$cloud_level)
+trainset$cloud_level = as.factor(trainset$cloud_level)
+testset.imputation$cloud_level = as.factor(testset.imputation$cloud_level)
+testset$cloud_level = as.factor(testset$cloud_level)
+
+trainset.imputation$cloud_level <- droplevels(trainset.imputation$cloud_level) # removes unused "" level
+trainset$cloud_level <- droplevels(trainset$cloud_level) # removes unused "" level
+testset.imputation$cloud_level <- droplevels(testset.imputation$cloud_level) # removes unused "" level
+testset$cloud_level <- droplevels(testset$cloud_level) # removes unused "" level
 
 ###############################################################################################
-# General Analysis
+# Linear Regression
 ###############################################################################################
-# Start with environmental data analysis
-# 
-# #Our transformation function
-# scaleFUN <- function(x) sprintf("%.2f", x)
-# 
-# ggplot(data = wind.dt) + labs(title="Windmill power against wind_speed and Experience\n without Department 6")+ 
-#   geom_point(mapping = aes(x = wind_speed, y = windmill_generated_power, color=atmospheric_temperature), position = "jitter")
-# 
-# d# dept breakdown
-# ggplot(data = lawsuit.dt) + labs(title="Breakdown of Gender across Departments")+ 
-#   geom_bar(mapping = aes(x = Dept, fill = Gender))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_bar(mapping = aes(x = Clin, colour = Clin))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_bar(mapping = aes(x = Cert, colour = Cert))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_bar(mapping = aes(x = Exper, colour = Gender))
-# 
-# ###############################################################################################
-# # Deeper Relations to salary increment
-# ###############################################################################################
-# lawsuit.dt.exclude6 = lawsuit.dt
-# lawsuit.dt.exclude6 <- lawsuit.dt.exclude6[Dept!=6]
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr), position = "jitter")
-# ## from the above two results, shows a similar breakdown when comparing sal_incr
-# 
-# ## with Rank as gradient, can show that there are other correlations with higher increment, other than gender
-# ggplot(data = lawsuit.dt) + labs(title="Salary Increment against Gender and Rank", color="Rank") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Rank), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt.exclude6) + labs(title="Salary Increment against Gender and Rank\n without Department 6", color="Rank") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Rank), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt) + labs(title="Salary Increment against Gender and Experience", color="Experience") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Exper), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt.exclude6) + labs(title="Salary Increment against Gender and Experience\n without Department 6", color="Experience") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Exper), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt) + labs(title="Salary Increment against Gender and Publication Rate", color="Publication Rate") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Prate), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt.exclude6) + labs(title="Salary Increment against Gender and Publication Rate\n without Department 6", color="Publication Rate") + ylab("Salary Increment")+ 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Prate), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Cert), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Clin), position = "jitter")
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Gender, y = sal_incr, color=Dept), position = "jitter")
-# 
-# ### Box Plot (Category variables)
-# ggplot(data = lawsuit.dt) +
-#   geom_boxplot(mapping = aes(x = Gender, y = sal_incr, color=Rank))
-# 
-# ggplot(data = lawsuit.dt) +
-#   geom_boxplot(mapping = aes(x = Gender, y = sal_incr, color=Cert))
-# 
-# ggplot(data = lawsuit.dt) +
-#   geom_boxplot(mapping = aes(x = Gender, y = sal_incr, color=Clin))
-# 
-# ggplot(data = lawsuit.dt) +labs(title="Salary Increment against Gender and Department", color="Department") + ylab("Salary Increment")+ 
-#   geom_boxplot(mapping = aes(x = Gender, y = sal_incr, color=Dept))
-# 
-# ###############################################################################################
-# # Extras
-# ###############################################################################################
-# # continuous variable
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Exper, y = sal_incr, color=Gender))
-# 
-# # continuous variable
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Prate, y = sal_incr, color=Gender))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Rank, y = sal_incr, color=Gender))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Clin, y = sal_incr, color=Gender))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Cert, y = sal_incr, color=Gender))
-# 
-# ggplot(data = lawsuit.dt) + 
-#   geom_point(mapping = aes(x = Dept, y = sal_incr, color=Gender))
-# 
-# ### Correlation plot
-# library(ggcorrplot)
-# summary(lawsuit.dt)
-# str(lawsuit.dt)
-# 
-# # drop id
-# lawsuit.corr.dt = lawsuit.dt
-# lawsuit.corr.dt[,ID:=NULL]
-# str(lawsuit.corr.dt)
-# 
-# cols <- c("Dept","Gender", "Clin", "Cert", "Prate", "Exper", "Rank", "Sal94", "Sal95", "sal_incr")
-# lawsuit.corr.dt <- lawsuit.dt[, lapply(.SD, as.numeric)]
-# str(lawsuit.corr.dt)
-# 
-# corr <- round(cor(lawsuit.corr.dt), 1)
-# ggcorrplot(corr, hc.order = TRUE, 
-#            type = "lower", 
-#            lab = TRUE, 
-#            lab_size = 3, 
-#            method="circle", 
-#            colors = c("tomato2", "white", "springgreen3"), 
-#            ggtheme=theme_bw)
+# Develop model on trainset.imputation, including selected time data
+m0 <- lm(windmill_generated_power ~ . - year, data = trainset.imputation)
+summary(m0)
+# residuals(m1) 
+
+# Residuals = Error = Actual mpg - Model Predicted mpg
+RMSE.m0.train.imputation <- sqrt(mean(residuals(m0)^2))  # RMSE on trainset based on m5 model.
+summary(abs(residuals(m0)))  # Check Min Abs Error and Max Abs Error.
+
+# Apply model from trainset to predict on testset.
+predict.m0.test.imputation <- predict(m0, newdata = testset.imputation)
+testset.imputation.error <- testset.imputation$windmill_generated_power - predict.m0.test.imputation
+
+# Testset Errors
+RMSE.m0.test.imputation <- sqrt(mean(testset.imputation.error^2))
+summary(abs(testset.imputation.error))
+
+vif(m0)
+###############################################################################################
+# Develop model on trainset.imputation, excluding time data
+m1 <- lm(windmill_generated_power ~ . - year - mday - wday - month, data = trainset.imputation)
+summary(m1)
+# residuals(m1) 
+
+# Residuals = Error = Actual mpg - Model Predicted mpg
+RMSE.m1.train.imputation <- sqrt(mean(residuals(m1)^2))  # RMSE on trainset based on m5 model.
+summary(abs(residuals(m1)))  # Check Min Abs Error and Max Abs Error.
+
+# Apply model from trainset to predict on testset.
+predict.m1.test.imputation <- predict(m1, newdata = testset.imputation)
+testset.imputation.error <- testset.imputation$windmill_generated_power - predict.m1.test.imputation
+
+# Testset Errors
+RMSE.m1.test.imputation <- sqrt(mean(testset.imputation.error^2))
+summary(abs(testset.imputation.error))
+
+vif(m1)
+###############################################################################################
+# Develop model on trainset, including time data, but dropping NA values
+nrow(trainset)
+sum(is.na(trainset))
+trainset <- trainset[complete.cases(trainset), ]
+testset <- testset[complete.cases(testset), ]
+nrow(trainset)
+sum(is.na(trainset))
+m2 <- lm(windmill_generated_power ~ . - year, data = trainset)
+summary(m2)
+
+# Residuals = Error = Actual mpg - Model Predicted mpg
+RMSE.m2.train <- sqrt(mean(residuals(m2)^2))  # RMSE on trainset based on m5 model.
+summary(abs(residuals(m2)))  # Check Min Abs Error and Max Abs Error.
+
+# Apply model from trainset to predict on testset.
+predict.m2.test <- predict(m2, newdata = testset)
+testset.error <- testset$windmill_generated_power - predict.m2.test
+
+# Testset Errors
+RMSE.m2.test <- sqrt(mean(testset.error^2))
+summary(abs(testset.imputation.error))
+
+vif(m2)
