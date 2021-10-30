@@ -9,14 +9,16 @@
 # Ref:          https://www.kaggle.com/synergystud/a-fine-windy-day-hackerearth-ml-challenge
 #===================================================================
 
+
 # import libraries
 library(data.table)
 library(ggplot2)
 
+setwd('/Users/leawangyi/Documents/2021/DOCUMENTS/REP_Y4S1/RE6013 BUS ANA & APP MACHINE LEARNING/RE6013')
 # setwd("D:/Dropbox/Schools/NBS/REP RE6013/3 Data Exploration and Statistics")
 
 # Import using data.table fread function
-system.time(wind.dt <- fread("/data/train_data.csv")) # datatable object
+system.time(wind.dt <- fread("data/train_data.csv")) # datatable object
 
 sum(is.na(wind.dt)) # 20579
 summary(wind.dt)
@@ -107,21 +109,21 @@ wind.dt[,datetime:=NULL]
 
 wind.dt[wind.dt == ""] <- NA # account for "" as NA
 
-na_handler <- function(x) {
-  if (is.numeric(x)) {
+# na_handler <- function(x) {
+  # if (is.numeric(x)) {
     ### Numerical Imputation using Mean Values
-    x[is.na(x)] <- mean(x, na.rm = TRUE)
-    x
-  } else {
+    # x[is.na(x)] <- mean(x, na.rm = TRUE)
+    # x
+  # } else {
     ### Categorical Imputation using Mode
-    x[is.na(x)] <- names(which.max(table(x)))
-    x
-  }
-}
+   #  x[is.na(x)] <- names(which.max(table(x)))
+    # x
+ #  }
+# }
 
-sum(is.na(wind.dt)) # 22614
-wind.dt <- wind.dt[, lapply(.SD, na_handler)]
-sum(is.na(data1)) # 0
+# sum(is.na(wind.dt)) # 22614
+# wind.dt <- wind.dt[, lapply(.SD, na_handler)]
+# sum(is.na(data1)) # 0
 
 # OR 2. Data imputation with MICE stochastic regression imputation
 as.data.frame(colnames(wind.dt))
@@ -144,7 +146,7 @@ data_imputation = function(data)
   return(data1)
 }
 
-data1 = data_imputation(wind.dt)
+data1 <- data_imputation(wind.dt)
 
 sum(is.na(wind.dt)) # 22614
 apply(is.na(data1), 2, which)
@@ -242,5 +244,5 @@ plot_num(wind.numeric)
 freq(wind.dt[,c(15,16,22,23,24,25,26,27)])
 
 
-# add one-hot encoding
+
 # add correlation charts 
